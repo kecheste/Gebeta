@@ -1,15 +1,18 @@
-const jwt = require("jsonwebtoken");
+import { jwtVerify } from "jose";
 
-// Generate JWT token
-function generateToken(user) {
-  const payload = {
-    sub: user.id,
-    username: user.username,
-  };
-
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });
-
-  return token;
+export function getJwtSecretKey() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT Secret key is not matched");
+  }
+  return new TextEncoder().encode(secret);
 }
 
-module.exports = { generateToken };
+export async function verifyJwtToken(token) {
+  try {
+    const { payload } = await jwtVerify(token, getJwtSecretKey());
+    return payload;
+  } catch (error) {
+    return null;
+  }
+}

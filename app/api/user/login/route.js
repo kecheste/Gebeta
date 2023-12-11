@@ -1,48 +1,45 @@
-import passport from "passport";
-import { withIronSession } from "next-iron-session";
-import "@/utils/passport";
 import { NextResponse } from "next/server";
+import { SignJWT } from "jose";
+import { getJwtSecretKey } from "@/utils/auth";
+import { db } from "@/utils/database";
+import bcrypt from "bcryptjs";
 
-const handler = async (req, res) => {
-  const { username, password } = req.json();
-  if (!username || !password) {
-    NextResponse.json(
-      { message: "Username and password required" },
-      { status: 400 }
+export async function POST(req) {
+  try {
+    const { username, password } = await req.json();
+    const user = await db.user.findFirst({ where: { username } });
+    if (!user)
+      return NextResponse.json(
+        { error: "User not found with this username" },
+        { status: 400 }
+      );
+    const passwordCorrect = await bcrypt.compare(password, user.password);
+    if (!passwordCorrect) {
+      return NextResponse.json(
+        { error: "Password Incorrect" },
+        { status: 400 }
+      );
+    }
+    const token = await new SignJWT({
+      username: username,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1m")
+      .sign(getJwtSecretKey());
+    const response = NextResponse.json(
+      { success: true },
+      { status: 200, headers: { "content-type": "application/json" } }
     );
+    response.cookies.set({
+      name: "token",
+      value: token,
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+    });
+    return response;
+  } catch (error) {
+    return NextResponse.json({ success: false });
   }
-  return new Promise((resolve, reject) => {
-    passport.authenticate("local", (err, user) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      if (!user) {
-        NextResponse.json(
-          { message: "Authentication failed" },
-          { status: 401 }
-        );
-        return;
-      }
-      req.logIn(user, (loginErr) => {
-        if (loginErr) {
-          reject(loginErr);
-          return;
-        }
-        NextResponse.json(
-          { message: "Authentication successful" },
-          { status: 200 }
-        );
-        resolve();
-      });
-    })({ json: () => ({ username, password }) }, res);
-  });
-};
-
-export const POST = withIronSession(handler, {
-  password: "gsdhfgdf7sd6f87s6dfs7dg6s8d7g6s8d7g6sdg",
-  cookieName: "session",
-  cookieOptions: {
-    secure: process.env.NODE_ENV === "production" ? true : false,
-  },
-});
+}
